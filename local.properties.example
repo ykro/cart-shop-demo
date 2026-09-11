@@ -1,0 +1,5 @@
+sdk.dir=/Users/you/Library/Android/sdk
+# Fine-grained GitHub PAT with "Issues: Read and write" on the target repo only. Never commit it.
+GITHUB_TOKEN=
+# owner/repo that receives the demo issues, e.g. ykro/cart-shop-demo
+GITHUB_REPO=
