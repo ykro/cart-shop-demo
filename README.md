@@ -25,69 +25,89 @@ before the model sees it (`RedactorTest` proves the fake user's name and email n
 ## Architecture
 
 ```mermaid
-flowchart TB
-  subgraph UI["Compose UI"]
-    Shop["Catalog · Product · Cart · Checkout\n(ShopTopBar: ⋮ Report a bug, shake)"]
-    BR["BugReportScreen\nchips · chat · editable report card · approval sheet"]
-    Settings["Settings\nprivate mode toggle · model download"]
+%%{init: {'theme':'base','themeVariables': {'lineColor':'#546E7A','textColor':'#212121','edgeLabelBackground':'#FFFFFF','fontSize':'14px'},'flowchart': {'wrappingWidth': 320}}}%%
+flowchart LR
+  subgraph HOST["Cart Shop app"]
+    direction TB
+    Shop["Shop screens<br/>catalog · cart · checkout"]
+    BR["BugReportScreen<br/>chips · report · approval sheet"]
+    Instr["Instrumentation<br/>Breadcrumbs · LogBuffer<br/>FakeCatalogApi · CartViewModel"]
   end
-  subgraph Instr["Instrumentation (host app side)"]
-    Crumbs["Breadcrumbs (ring 50)"]
-    Logs["LogBuffer (Timber tree)"]
-    Api["FakeCatalogApi (last exchange)"]
-    Shot["ScreenshotCapture (PixelCopy)"]
-    VM["CartViewModel\nDISCOUNT-STALE bug"]
+  subgraph AGENT["agent/"]
+    direction TB
+    RT["AgentRuntime<br/>InMemoryRunner · replay"]
+    AG["BugReporterAgent<br/>LlmAgent · outputSchema"]
   end
-  subgraph Agent["agent/"]
-    RT["AgentRuntime\nInMemoryRunner · replay · context pack"]
-    AG["BugReporterAgent (LlmAgent)\noutputSchema = BugReportTurn"]
-    CT["ContextTools @Tool ×6\n→ Redactor"]
-    GT["GitHubTools\ncreate_github_issue (requireConfirmation)"]
-    SK["SkillToolset\nbug-report-template"]
+  subgraph TOOLS["Tools"]
+    direction TB
+    CT["ContextTools ×6<br/>@Tool + KSP · Redactor"]
+    SK["SkillToolset<br/>bug-report-template"]
+    GT["create_github_issue<br/>⚠︎ HITL"]
   end
-  subgraph Services["ADK services"]
-    Room["RoomSessionService"]
-    Art["FileArtifactService"]
+  subgraph EXT["Services · models · APIs"]
+    direction TB
+    Svc["RoomSessionService<br/>FileArtifactService"]
+    Model["gemini-3.8-flash<br/>Firebase AI Logic"]
+    Local["Gemma 4 E2B on device<br/>private mode"]
+    GH["GitHub REST<br/>/repos/{repo}/issues"]
   end
-  Models["Firebase AI Logic gemini-3.8-flash\nor LiteRtLmModel Gemma 4 E2B"]
-  GH["GitHub REST /repos/{repo}/issues"]
 
-  Shop --> VM --> Crumbs & Logs & Api
-  Shop -- Report a bug / shake --> Shot --> Art
-  Shop --> BR --> RT
-  Settings --> RT
-  RT --> AG --> CT & GT & SK
-  CT --> Crumbs & Logs & Api & VM
+  Shop --> Instr
+  Shop -- shake / menu --> BR --> RT --> AG
+  Instr --> CT
+  AG --> CT & SK & GT
+  RT --> Svc
+  AG --> Model
+  AG -.-> Local
   GT --> GH
-  AG --> Models
-  RT --> Room & Art
+
+  classDef ui fill:#E8EAF6,stroke:#3F51B5,stroke-width:1.5px,color:#212121
+  classDef agent fill:#FFFFFF,stroke:#3F51B5,stroke-width:2px,color:#212121
+  classDef tool fill:#F5F5F5,stroke:#5C6BC0,stroke-width:1.5px,color:#212121
+  classDef ext fill:#ECEFF1,stroke:#607D8B,stroke-width:1.5px,color:#212121
+  classDef accent fill:#FFF3E0,stroke:#FFB300,stroke-width:2px,color:#212121
+  class Shop,BR,Instr ui
+  class RT,AG agent
+  class CT,SK tool
+  class Svc,Model,GH ext
+  class GT,Local accent
+  style HOST fill:#FAFAFA,stroke:#9E9E9E,color:#212121
+  style AGENT fill:#FAFAFA,stroke:#9E9E9E,color:#212121
+  style TOOLS fill:#FAFAFA,stroke:#9E9E9E,color:#212121
+  style EXT fill:#FAFAFA,stroke:#9E9E9E,color:#212121
 ```
 
 ### One report, end to end
 
 ```mermaid
 sequenceDiagram
+  autonumber
   participant T as Tester
   participant App as Cart Shop
   participant R as AgentRuntime
   participant A as LlmAgent
   participant GH as GitHub
   T->>App: shake / Report a bug
-  App->>R: createSession + saveScreenshot (artifact)
+  App->>R: createSession + screenshot artifact
   App->>R: kickoff message
   R->>A: runAsync
-  A->>A: load_skill(bug-report-template)
-  A->>A: get_breadcrumbs, get_cart_state, get_app_logs, …
-  A-->>App: {status: QUESTION, question}
+  Note over A: load_skill(bug-report-template)<br/>get_breadcrumbs · get_cart_state<br/>get_app_logs · get_environment · …
+  A-->>App: {status: QUESTION}
   T->>App: answer
-  A-->>App: {status: REPORT, report}
+  A-->>App: {status: REPORT}
   T->>App: Create GitHub issue (after editing)
-  A->>R: create_github_issue → adk_request_confirmation
-  R-->>App: ConfirmationRequested → bottom sheet
-  T->>App: Create issue
-  App->>R: FunctionResponse(confirmed = true)
-  R->>GH: POST /issues
-  A-->>App: {status: DONE, issue}
+  A->>R: create_github_issue → confirmation
+  R-->>App: ConfirmationRequested → sheet
+  alt approve
+    T->>App: Create issue
+    App->>R: FunctionResponse(confirmed = true)
+    R->>GH: POST /issues
+    A-->>App: {status: DONE, issue}
+  else cancel
+    T->>App: Cancel
+    App->>R: FunctionResponse(confirmed = false)
+    A-->>App: {status: REPORT} again, no retry
+  end
 ```
 
 ## The bug (`DISCOUNT-STALE`)
