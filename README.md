@@ -5,6 +5,8 @@ A small Android shop with a deliberately broken cart, and an **agentic bug repor
 and an `LlmAgent` collects the evidence a developer would ask for, asks the tester at most two
 questions, drafts a structured report and, **only after you approve it**, files a GitHub issue.
 
+One of three ADK for Kotlin demos, each a standalone repo. The other two: [Recovery Pal](https://github.com/ykro/recovery-pal-demo) · [Trail Aid](https://github.com/ykro/trail-aid-demo).
+
 ## What you'll learn
 
 | ADK feature | Where |
@@ -25,56 +27,26 @@ before the model sees it (`RedactorTest` proves the fake user's name and email n
 ## Architecture
 
 ```mermaid
-%%{init: {'theme':'base','themeVariables': {'lineColor':'#546E7A','textColor':'#212121','edgeLabelBackground':'#FFFFFF','fontSize':'14px'},'flowchart': {'wrappingWidth': 320}}}%%
+%%{init: {'theme':'base','themeVariables': {'lineColor':'#546E7A','textColor':'#212121','edgeLabelBackground':'#FFFFFF','fontSize':'14px'},'flowchart': {'wrappingWidth': 260, 'nodeSpacing': 28, 'rankSpacing': 48}}}%%
 flowchart LR
-  subgraph HOST["Cart Shop app"]
-    direction TB
-    Shop["Shop screens<br/>catalog · cart · checkout"]
-    BR["BugReportScreen<br/>chips · report · approval sheet"]
-    Instr["Instrumentation<br/>Breadcrumbs · LogBuffer<br/>FakeCatalogApi · CartViewModel"]
-  end
-  subgraph AGENT["agent/"]
-    direction TB
-    RT["AgentRuntime<br/>InMemoryRunner · replay"]
-    AG["BugReporterAgent<br/>LlmAgent · outputSchema"]
-  end
-  subgraph TOOLS["Tools"]
-    direction TB
-    CT["ContextTools ×6<br/>@Tool + KSP · Redactor"]
-    SK["SkillToolset<br/>bug-report-template"]
-    GT["create_github_issue<br/>⚠︎ HITL"]
-  end
-  subgraph EXT["Services · models · APIs"]
-    direction TB
-    Svc["RoomSessionService<br/>FileArtifactService"]
-    Model["gemini-3.8-flash<br/>Firebase AI Logic"]
-    Local["Gemma 4 E2B on device<br/>private mode"]
-    GH["GitHub REST<br/>/repos/{repo}/issues"]
-  end
-
-  Shop --> Instr
-  Shop -- shake / menu --> BR --> RT --> AG
-  Instr --> CT
-  AG --> CT & SK & GT
-  RT --> Svc
-  AG --> Model
-  AG -.-> Local
-  GT --> GH
+  BR["Report a bug<br/>shake or menu"] --> RT["AgentRuntime<br/>runner · Room replay"]
+  RT --> AG["LlmAgent<br/>outputSchema"]
+  AG --> CT["Context tools ×6<br/>@Tool + Redactor"]
+  AG --> SK["Skill<br/>bug-report-template"]
+  AG --> GT["create_github_issue<br/>⚠︎ needs approval"]
+  AG --> G["gemini-3.8-flash<br/>Firebase AI Logic"]
+  AG -.-> L["Gemma 4 E2B<br/>private mode"]
 
   classDef ui fill:#E8EAF6,stroke:#3F51B5,stroke-width:1.5px,color:#212121
   classDef agent fill:#FFFFFF,stroke:#3F51B5,stroke-width:2px,color:#212121
   classDef tool fill:#F5F5F5,stroke:#5C6BC0,stroke-width:1.5px,color:#212121
-  classDef ext fill:#ECEFF1,stroke:#607D8B,stroke-width:1.5px,color:#212121
-  classDef accent fill:#FFF3E0,stroke:#FFB300,stroke-width:2px,color:#212121
-  class Shop,BR,Instr ui
+  classDef model fill:#C5CAE9,stroke:#303F9F,stroke-width:2px,color:#212121
+  classDef accent fill:#FFF3E0,stroke:#EF6C00,stroke-width:2px,color:#212121
+  class BR ui
   class RT,AG agent
   class CT,SK tool
-  class Svc,Model,GH ext
-  class GT,Local accent
-  style HOST fill:#FAFAFA,stroke:#9E9E9E,color:#212121
-  style AGENT fill:#FAFAFA,stroke:#9E9E9E,color:#212121
-  style TOOLS fill:#FAFAFA,stroke:#9E9E9E,color:#212121
-  style EXT fill:#FAFAFA,stroke:#9E9E9E,color:#212121
+  class G model
+  class GT,L accent
 ```
 
 ### One report, end to end
@@ -84,29 +56,23 @@ sequenceDiagram
   autonumber
   participant T as Tester
   participant App as Cart Shop
-  participant R as AgentRuntime
   participant A as LlmAgent
   participant GH as GitHub
-  T->>App: shake / Report a bug
-  App->>R: createSession + screenshot artifact
-  App->>R: kickoff message
-  R->>A: runAsync
-  Note over A: load_skill(bug-report-template)<br/>get_breadcrumbs · get_cart_state<br/>get_app_logs · get_environment · …
-  A-->>App: {status: QUESTION}
+  T->>App: shake
+  App->>A: screenshot artifact + kickoff
+  Note over A: load_skill · get_breadcrumbs<br/>get_cart_state · get_app_logs · …
+  A-->>T: one question
   T->>App: answer
-  A-->>App: {status: REPORT}
-  T->>App: Create GitHub issue (after editing)
-  A->>R: create_github_issue → confirmation
-  R-->>App: ConfirmationRequested → sheet
+  A-->>T: report card (editable)
+  T->>App: Create GitHub issue
+  A->>App: create_github_issue → approval sheet
   alt approve
-    T->>App: Create issue
-    App->>R: FunctionResponse(confirmed = true)
-    R->>GH: POST /issues
-    A-->>App: {status: DONE, issue}
+    T->>App: Create
+    App->>GH: POST /issues
+    A-->>T: issue number + link
   else cancel
     T->>App: Cancel
-    App->>R: FunctionResponse(confirmed = false)
-    A-->>App: {status: REPORT} again, no retry
+    A-->>T: report card again, no retry
   end
 ```
 
