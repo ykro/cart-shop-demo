@@ -52,6 +52,7 @@ class CartShopApp : Application() {
   override fun onCreate() {
     super.onCreate()
     Timber.plant(logBuffer.Tree())
+    AppCheckSetup.install(this)
     Timber.i("Cart Shop started (version %s)", BuildConfig.VERSION_NAME)
   }
 }

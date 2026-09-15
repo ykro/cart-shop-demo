@@ -133,6 +133,10 @@ to a question.
 1. **Firebase**: register `dev.ykro.bugreporter` in your Firebase project, enable *Firebase AI Logic*
    (Gemini Developer API) and drop `google-services.json` into `app/`. Without it the app still
    builds; the cloud agent then reports "Firebase is not configured".
+   **App Check**: Firebase AI Logic rejects unattested requests once enforcement is on. Register the
+   signing certificate's SHA-256 (`./gradlew signingReport`) for Play Integrity; debug builds install
+   the *debug provider* instead (`src/debug/.../AppCheckSetup.kt`), so on first launch copy the token
+   logcat prints (`Enter this debug secret into the allow list`) into App Check → *Manage debug tokens*.
 2. **GitHub**: copy `local.properties.example` to `local.properties` and set `GITHUB_TOKEN`
    (fine-grained PAT with *Issues: read & write* on one repo) and `GITHUB_REPO=owner/repo`. Both are
    read at build time into `BuildConfig`. Without them the agent still drafts the report and the
