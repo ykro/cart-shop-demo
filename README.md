@@ -15,7 +15,7 @@ One of three ADK for Kotlin demos, each a standalone repo. The other two: [Recov
 | `@Tool` / `@Param` functions turned into tools by the KSP processor (`generatedTools()`) | `agent/ContextTools.kt`, `agent/GitHubTools.kt` |
 | Human-in-the-loop with `requireConfirmation = true` and the `adk_request_confirmation` round trip | `agent/GitHubTools.kt`, `AgentRuntime.sendConfirmation`, `ui/components/ConfirmationSheet.kt` |
 | Skills (`SkillToolset` + `AssetSkillSource`) with progressive disclosure of `assets/*.md` | `assets/skills/bug-report-template/` |
-| Structured output (`outputSchema` + `outputKey`) with a hand-built `Schema` | `agent/BugReportSchema.kt` |
+| Structured output as a JSON contract in the instruction, validated by `BugReportSchema.parseTurn` (why not `outputSchema`: see below) | `agent/BugReportSchema.kt`, `agent/BugReporterAgent.kt` |
 | Persistent sessions with `RoomSessionService`: kill the app mid-report and it resumes | `AgentRuntime.replay`, `ui/bugreport/BugReportViewModel.kt` |
 | Artifacts with `FileArtifactService` (the screenshot travels as an artifact, not as prompt text) | `AgentRuntime.saveScreenshot` |
 | Streaming (`RunConfig(streamingMode = SSE)`) and event → UI mapping (tool chips) | `AgentRuntime.run`, `ui/components/ToolCallChips.kt` |
@@ -30,7 +30,7 @@ before the model sees it (`RedactorTest` proves the fake user's name and email n
 %%{init: {'theme':'base','themeVariables': {'lineColor':'#546E7A','textColor':'#212121','edgeLabelBackground':'#FFFFFF','fontSize':'14px'},'flowchart': {'wrappingWidth': 260, 'nodeSpacing': 28, 'rankSpacing': 48}}}%%
 flowchart LR
   BR["Report a bug<br/>shake or menu"] --> RT["AgentRuntime<br/>runner · Room replay"]
-  RT --> AG["LlmAgent<br/>outputSchema"]
+  RT --> AG["LlmAgent<br/>JSON turns"]
   AG --> CT["Context tools ×6<br/>@Tool + Redactor"]
   AG --> SK["Skill<br/>bug-report-template"]
   AG --> GT["create_github_issue<br/>⚠︎ needs approval"]
@@ -76,6 +76,28 @@ sequenceDiagram
   end
 ```
 
+## Screens
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/01-catalog.png" width="230" alt="Catalog with four products"><br><sub>Catalog</sub></td>
+    <td align="center"><img src="docs/screenshots/02-cart-bug.png" width="230" alt="Cart showing a total of minus 200 dollars"><br><sub>The bug: total −$200.00</sub></td>
+    <td align="center"><img src="docs/screenshots/03-chips.png" width="230" alt="Tool-call chips followed by the agent's question"><br><sub>Chips, then one question</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/04b-report-card-top.png" width="230" alt="Editable report card with title, severity and steps"><br><sub>Report card (editable)</sub></td>
+    <td align="center"><img src="docs/screenshots/04-report-card.png" width="230" alt="Expected versus actual with the hypothesis highlighted"><br><sub>Expected · actual · hypothesis</sub></td>
+    <td align="center"><img src="docs/screenshots/05-approval-sheet.png" width="230" alt="Approval sheet with the Markdown issue body"><br><sub>ADK pauses: approve or cancel</sub></td>
+  </tr>
+  <tr>
+    <td align="center"><img src="docs/screenshots/06-issue-created.png" width="230" alt="Issue number 3 created with its GitHub link"><br><sub>Issue created</sub></td>
+    <td align="center"><img src="docs/screenshots/07-private-mode.png" width="230" alt="Private mode with Gemma on device answering the first question"><br><sub>Private mode (Gemma 4 E2B on device)</sub></td>
+    <td align="center"><img src="docs/screenshots/10-settings.png" width="230" alt="Settings with the private mode switch and the GitHub target repo"><br><sub>Settings</sub></td>
+  </tr>
+</table>
+
+More: [product](docs/screenshots/08-product.png) · [checkout](docs/screenshots/09-checkout.png). All captured on the `Pixel_9_API_36` emulator.
+
 ## The bug (`DISCOUNT-STALE`)
 
 `CartViewModel` freezes the coupon discount as an absolute amount when the coupon is applied and
@@ -93,6 +115,32 @@ gives the agent only the skill toolset plus `create_github_issue`. Skills, struc
 approval sheet stay identical; `BugReporterAgent.create(onDevice = true)` is the whole difference. If
 the small model answers in prose instead of the JSON schema, `BugReportSchema.parseTurn` degrades it
 to a question.
+
+## A lesson from the cloud model too
+
+**`outputSchema` + tools = no answer.** With `outputSchema = BugReportSchema.turn` on the agent,
+`gemini-3.8-flash` through Firebase AI Logic collected the context correctly and then never produced
+a final reply: every turn was another tool call (re-loading the same three skill assets, guessing
+resource names) until ADK's `maxLlmCalls` limit stopped it. The same agent on the on-device model
+answered fine. Removing `outputSchema`, describing the JSON shape in the instruction and validating
+the text with `BugReportSchema.parseTurn` fixed it on the first run: chips, one question, report
+card, approval, issue. The hand-built `Schema` stays in the repo as the contract the parser checks.
+
+`gemini-3.8-flash` follows the skill well, then sometimes goes looking for resources that do not
+exist: after loading the three real assets it asked for `references/response_schema.json`,
+`references/rules.md`, `scripts/setup.sh`… one guess per LLM call, until ADK's `maxLlmCalls`
+limit (24) stopped the run. The trigger was the instruction saying "matching the response schema"
+without saying where that schema lives. The fix is in the prompt, not in code: the instruction now
+lists the skill's exact resources, forbids any other path and states that the output schema is
+enforced by the app. Skills are progressive disclosure for the model; the instruction still has to
+close the door on what is *not* there.
+
+The same model also once skipped the question and the report card and called `create_github_issue`
+straight after collecting context, and when the tester rejected it in the sheet it called the tool
+again in the same turn (ADK answers a rejection with `This tool call is rejected.`, which reads like a
+transient error). Human-in-the-loop held: nothing was created without approval. But the demo wants
+the report card first, so the instruction now says the first non-tool reply must be QUESTION or
+REPORT, the tool is called only when the user asks, and a rejection is never retried.
 
 ## Setup
 

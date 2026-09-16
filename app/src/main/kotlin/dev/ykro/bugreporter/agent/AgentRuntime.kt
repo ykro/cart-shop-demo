@@ -159,6 +159,7 @@ class AgentRuntime(
       Timber.e(e, "Agent turn failed")
       emit(AgentUiEvent.Error(e.message ?: e::class.simpleName.orEmpty()))
     }
+    Timber.i("Turn finished")
     emit(AgentUiEvent.Done)
   }
 

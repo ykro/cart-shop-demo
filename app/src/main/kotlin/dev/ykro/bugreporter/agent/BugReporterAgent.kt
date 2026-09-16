@@ -24,7 +24,9 @@ object BugReporterAgent {
       // AgentRuntime.kickoffMessageWithContext) so the six collection tools are left out.
       tools = if (onDevice) gitHubTools.generatedTools() else contextTools.generatedTools() + gitHubTools.generatedTools(),
       toolsets = listOf(SkillToolset(AssetSkillSource.fromContext(context, skillsBaseDir = "skills"))),
-      outputSchema = BugReportSchema.turn,
+      // outputSchema is deliberately NOT set: with tools present, gemini-3.8-flash through Firebase AI
+      // Logic never produced a final answer under it (it kept calling tools until maxLlmCalls). The
+      // JSON shape lives in the instruction and BugReportSchema.parseTurn validates it instead.
       outputKey = OUTPUT_KEY,
       generateContentConfig =
         if (onDevice) null
@@ -59,21 +61,35 @@ object BugReporterAgent {
     3. Ask the user only what you cannot infer (what they expected to see; whether it happened more
        than once). Ask ONE question per turn and at most TWO questions in total. If the context already
        makes the expected behavior obvious, ask at most one confirming question.
-    4. Produce the report following the skill's template and checklist. Load the skill's
-       `assets/severity_guide.md` only if you are unsure about the severity. Include a one-sentence
+    4. Produce the report following the skill's template and checklist. The skill has exactly three
+       resources: `assets/issue_template.md`, `assets/quality_checklist.md` and
+       `assets/severity_guide.md` (load the last one only if you are unsure about the severity).
+       Never request any other path; if a resource is not found, continue without it. Include a one-sentence
        hypothesis of the root cause when the data supports one. Use concrete values (amounts,
        quantities, coupon codes) taken from the tools.
-    5. When the user asks you to create the issue, call `create_github_issue` with the title, a
-       Markdown body rendered from the issue template, and the labels. The user approves or rejects
-       it in the app. If they reject it, reply with status REPORT again and wait; do not retry on your own.
+    5. Only when the user explicitly asks you to create the issue (a message such as "create the
+       issue"), call `create_github_issue` with the title, a Markdown body rendered from the issue
+       template, and the labels. Never call it on your own initiative: your first non-tool reply must
+       be status QUESTION or REPORT, and the report must be shown (status REPORT) before any issue is
+       created. The user approves or rejects the call in the app. If the tool result says the call was
+       rejected, do NOT call it again in that turn; reply with status REPORT and wait for the user.
 
     Rules:
     - Never include emails, personal names, phone numbers or tokens in the report. Tool outputs are
       already redacted; keep the placeholders as they are.
     - Money values from tools are in cents; write them as dollars in the report (40000 cents = $400.00).
-    - Every reply MUST be a single JSON object matching the response schema. Use status QUESTION with
-      `question` while you need input, REPORT with `report` when it is ready, DONE with `issue` and a
-      short `message` after the issue exists, ERROR with `message` if something blocks you.
+    - Every reply MUST be a single JSON object with this shape (no Markdown fences, no prose outside
+      it; this is the whole response format, it is not stored in the skill, do not look for it):
+      {"status": "QUESTION" | "REPORT" | "DONE" | "ERROR",
+       "question": "<one question, status QUESTION only>",
+       "message": "<short message, status DONE or ERROR>",
+       "report": {"title": "...", "severity": "LOW|MEDIUM|HIGH|CRITICAL", "area": "cart|checkout|catalog|other",
+                  "stepsToReproduce": ["...", "..."], "expectedBehavior": "...", "actualBehavior": "...",
+                  "environment": "...", "evidence": ["screenshot.png"], "hypothesis": "...", "labels": ["bug", "cart"]},
+       "issue": {"number": 0, "url": "..."}}
+      Include only the fields the status needs: QUESTION -> question; REPORT -> report; DONE -> issue and
+      message; ERROR -> message. After the tools have answered and the skill assets are loaded, your
+      next reply must be one of these JSON objects, not another tool call.
     """
       .trimIndent()
 }
