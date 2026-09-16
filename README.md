@@ -19,7 +19,7 @@ One of three ADK for Kotlin demos, each a standalone repo. The other two: [Recov
 | Persistent sessions with `RoomSessionService`: kill the app mid-report and it resumes | `AgentRuntime.replay`, `ui/bugreport/BugReportViewModel.kt` |
 | Artifacts with `FileArtifactService` (the screenshot travels as an artifact, not as prompt text) | `AgentRuntime.saveScreenshot` |
 | Streaming (`RunConfig(streamingMode = SSE)`) and event → UI mapping (tool chips) | `AgentRuntime.run`, `ui/components/ToolCallChips.kt` |
-| On-device model swap: the same agent code runs on `LiteRtLmModel` (Gemma 4 E2B) in *private mode* | `agent/ModelStore.kt`, `ui/settings/` |
+| On-device model swap: the same agent code runs on `LiteRtLmModel` ([Gemma 4 E2B](https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm)) in *private mode* | `agent/ModelStore.kt`, `ui/settings/` |
 
 Privacy is enforced in code, not by prompt: every tool passes its output through `Redactor`
 before the model sees it (`RedactorTest` proves the fake user's name and email never leak).
@@ -173,9 +173,10 @@ REPORT, the tool is called only when the user asks, and a rejection is never ret
 
 ## Verified on the emulator (Pixel_9_API_36)
 
-Cart bug repro, screenshot artifact + Room session creation, chips, kill-and-resume, private mode
-through the first question (`load_skill`, `list_skills`, question in ~4 min). The cloud path and the
-GitHub call need your `google-services.json` and `local.properties`.
+Cart bug repro (−$200.00), screenshot artifact + Room session, the full cloud path with
+`gemini-3.8-flash`: seven context chips → one question → editable report card → approval sheet →
+issue created in `ykro/cart-shop-demo` (#3 in the screenshots above), cancel path (nothing created,
+no retry), kill-and-resume from Room, and private mode on Gemma 4 E2B through the first question.
 
 ## Layout
 
