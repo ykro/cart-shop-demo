@@ -190,3 +190,7 @@ app/src/main/kotlin/dev/ykro/bugreporter/
 app/src/main/assets/skills/bug-report-template/   SKILL.md + issue template, checklist, severity guide
 app/src/test/                                     Redactor, Breadcrumbs, BugReportSchema, CartViewModel bug repro
 ```
+
+## License
+
+Apache License 2.0. Copyright 2026 Adrián Catalán. See [LICENSE](LICENSE).
